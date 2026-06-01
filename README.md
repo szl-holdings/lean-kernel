@@ -34,4 +34,4 @@ This Space pins **Lean v4.13.0 + Mathlib v4.13.0** (from the repo's `lean-toolch
 
 Numbers are **never hardcoded** — every figure is recomputed live from the deployed commit. If `lake build` fails (e.g. Mathlib cache or disk is unavailable on the box), `healthz` and the UI report **BUILD FAIL** with the verbatim error tail. Nothing is faked green.
 
-Doctrine v10/v11. Author: Stephen P. Lutar Jr. (ORCID 0009-0001-0110-4173), SZL Holdings.
+Doctrine v11 LOCKED. Author: Stephen P. Lutar Jr. (ORCID 0009-0001-0110-4173), SZL Holdings.
