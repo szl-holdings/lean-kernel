@@ -1,0 +1,29 @@
+# Lightweight CI for the lean-kernel live verification service.
+# WHAT: byte-compiles the FastAPI app + helper modules and imports them so a
+#       broken commit can't ship to the HF Docker Space silently.
+# WHY:  the heavy Lean/Lake build runs inside the deployed Space (it needs the
+#       Mathlib cache and is reported live by /api/lean/build + healthz), so CI
+#       here only guards the Python service layer. Honest scope: this does NOT
+#       re-run the proofs — that is the kernel's job at runtime.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install service deps
+        run: pip install -r requirements.txt
+      - name: Byte-compile app modules
+        run: python -m compileall -q app
+      - name: Import smoke test (no Lean build)
+        working-directory: app
+        run: python -c "import server, lean_numbers, theorem_scan; print('import OK')"
