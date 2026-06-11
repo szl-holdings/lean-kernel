@@ -1,0 +1,115 @@
+# Kernel build + reproducible-verification gate.
+#
+# WHAT: docker-builds the lean-kernel image exactly as it ships, then runs a
+#       minimal-but-real Lean/Lake verification *inside* that freshly built
+#       image:
+#         1. the toolchain runs            (elan / lean / lake --version)
+#         2. the kernel actually compiles  (`lake build` of the Mathlib-free
+#            PutnamShowcase library — real, zero-`sorry`, kernel-checked Lean)
+#         3. Mathlib loads & checks        (compile a tiny file that imports a
+#            Mathlib module and proves a trivial theorem, against the warmed
+#            pinned cache)
+#
+# WHY:  the Dockerfile pins a base OS (currently ubuntu:24.04). A base-OS bump
+#       (e.g. the deferred 24.04 -> 26.04 Dependabot major) can silently break
+#       the prebuilt elan/Lean binaries (glibc), apt package availability, or
+#       the Mathlib cache load path. This gate rebuilds the image from whatever
+#       base the PR proposes and proves the toolchain still compiles, so the OS
+#       major can be retried with confidence instead of being deferred blind.
+#
+# HONEST SCOPE: this does not re-run the whole proof library (that is the live
+#       kernel's job at runtime via /api/lean/build). It proves the *toolchain*
+#       is intact on the chosen base OS: a real core build + a real Mathlib
+#       load. If the Mathlib cache is genuinely unavailable the Mathlib step
+#       fails loud rather than faking green or compiling for hours.
+name: kernel-build-verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'start.sh'
+      - 'app/**'
+      - 'data/**'
+      - 'nginx.conf'
+      - '.github/workflows/kernel-build-verify.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'start.sh'
+      - 'app/**'
+      - 'data/**'
+      - 'nginx.conf'
+      - '.github/workflows/kernel-build-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-build-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # The image bakes the full pinned Mathlib olean cache, which is several GB.
+      # Reclaim the big preinstalled toolchains the runner ships so the build
+      # never fails on "no space left on device".
+      - name: Free disk space
+        run: |
+          set -x
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Build kernel image
+        run: |
+          docker build -t lean-kernel:ci .
+
+      # Real verification, executed inside the freshly built image so it runs on
+      # the exact base OS the Dockerfile selected.
+      - name: Verify Lean/Lake toolchain compiles on this base OS
+        run: |
+          docker run --rm lean-kernel:ci bash -lc '
+            set -euo pipefail
+            export PATH="/root/.elan/bin:${PATH}"
+            REPO="${LUTAR_REPO:-/opt/lutar-lean}"
+            cd "$REPO"
+
+            echo "== base OS =="
+            . /etc/os-release && echo "$PRETTY_NAME"
+
+            echo "== toolchain runs =="
+            elan --version
+            lean --version
+            lake --version
+            echo "pinned toolchain: $(cat lean-toolchain)"
+
+            echo "== core kernel smoke: build the Mathlib-free PutnamShowcase library =="
+            # PutnamShowcase is core-Lean only (no Mathlib imports): a real,
+            # zero-sorry, kernel-checked build that exercises elan + lake + lean
+            # + the kernel itself on this base OS, fast and network-free.
+            lake build PutnamShowcase
+
+            echo "== Mathlib load smoke =="
+            # Make sure the pinned Mathlib oleans are materialized (the image
+            # bakes them; this re-check is idempotent and fast when present).
+            lake exe cache get >/dev/null 2>&1 || echo "WARN: cache re-fetch incomplete; relying on baked oleans"
+            printf "import Mathlib.Data.Nat.Basic\n\nexample : 2 + 2 = 4 := by decide\n\ntheorem smoke_add_comm (a b : Nat) : a + b = b + a := Nat.add_comm a b\n" > /tmp/Smoke.lean
+            echo "-- Smoke.lean --"; cat /tmp/Smoke.lean
+            # `lake env lean` resolves imports against the built/cached oleans on
+            # LEAN_PATH. If the Mathlib olean is absent this fails fast with an
+            # import error (it does NOT silently compile Mathlib from source).
+            lake env lean /tmp/Smoke.lean
+
+            echo "VERIFIED: Lean + Mathlib toolchain compiles on $(. /etc/os-release && echo "$PRETTY_NAME")"
+          '
