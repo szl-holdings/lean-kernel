@@ -10,12 +10,20 @@
 #            Mathlib module and proves a trivial theorem, against the warmed
 #            pinned cache)
 #
-# WHY:  the Dockerfile pins a base OS (currently ubuntu:24.04). A base-OS bump
-#       (e.g. the deferred 24.04 -> 26.04 Dependabot major) can silently break
-#       the prebuilt elan/Lean binaries (glibc), apt package availability, or
-#       the Mathlib cache load path. This gate rebuilds the image from whatever
-#       base the PR proposes and proves the toolchain still compiles, so the OS
-#       major can be retried with confidence instead of being deferred blind.
+# WHY:  the Dockerfile pins a base OS (now ubuntu:26.04). A base-OS bump can
+#       silently break the prebuilt elan/Lean binaries (glibc), apt package
+#       availability, or the Mathlib cache load path. This gate rebuilds the
+#       image from whatever base the PR proposes and proves the toolchain still
+#       compiles, so the OS major can be retried with confidence.
+#
+# ENFORCEMENT: `build-verify` is a REQUIRED status check on `main`. A required
+#       check must report on EVERY pull request or it deadlocks PRs that don't
+#       match a path filter (skipped-but-required trap). So this workflow runs on
+#       *every* PR and always reports the `build-verify` context. The expensive
+#       docker build + Lean compile only runs when kernel-relevant files actually
+#       change; PRs that touch nothing kernel-related pass honestly and fast
+#       (there is genuinely nothing to verify), rather than faking green or
+#       hanging forever.
 #
 # HONEST SCOPE: this does not re-run the whole proof library (that is the live
 #       kernel's job at runtime via /api/lean/build). It proves the *toolchain*
@@ -27,23 +35,7 @@ name: kernel-build-verify
 on:
   push:
     branches: [main]
-    paths:
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - 'start.sh'
-      - 'app/**'
-      - 'data/**'
-      - 'nginx.conf'
-      - '.github/workflows/kernel-build-verify.yml'
   pull_request:
-    paths:
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - 'start.sh'
-      - 'app/**'
-      - 'data/**'
-      - 'nginx.conf'
-      - '.github/workflows/kernel-build-verify.yml'
   workflow_dispatch:
 
 permissions:
@@ -59,11 +51,42 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history so we can diff the PR base..head to decide whether any
+          # kernel-relevant file changed.
+          fetch-depth: 0
+
+      # Decide whether the expensive image build + Lean verification is needed.
+      # Non-PR events (push to main, manual dispatch) always run the full verify.
+      # For PRs, only kernel-relevant changes trigger the heavy path; everything
+      # else reports `build-verify` green honestly (nothing to verify).
+      - name: Detect kernel-relevant changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "event '${{ github.event_name }}': running full verification."
+            exit 0
+          fi
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "diffing $BASE..$HEAD"
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD" || true)"
+          echo "changed files:"; echo "$CHANGED"
+          if printf '%s\n' "$CHANGED" | grep -E '^(Dockerfile|requirements\.txt|start\.sh|nginx\.conf|app/|data/|\.github/workflows/kernel-build-verify\.yml)' >/dev/null; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "kernel-relevant files changed -> full verification."
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "no kernel-relevant files changed -> nothing to verify (PASS)."
+          fi
 
       # The image bakes the full pinned Mathlib olean cache, which is several GB.
       # Reclaim the big preinstalled toolchains the runner ships so the build
       # never fails on "no space left on device".
       - name: Free disk space
+        if: steps.changes.outputs.relevant == 'true'
         run: |
           set -x
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
@@ -72,12 +95,14 @@ jobs:
           df -h /
 
       - name: Build kernel image
+        if: steps.changes.outputs.relevant == 'true'
         run: |
           docker build -t lean-kernel:ci .
 
       # Real verification, executed inside the freshly built image so it runs on
       # the exact base OS the Dockerfile selected.
       - name: Verify Lean/Lake toolchain compiles on this base OS
+        if: steps.changes.outputs.relevant == 'true'
         run: |
           docker run --rm lean-kernel:ci bash -lc '
             set -euo pipefail
@@ -113,3 +138,9 @@ jobs:
 
             echo "VERIFIED: Lean + Mathlib toolchain compiles on $(. /etc/os-release && echo "$PRETTY_NAME")"
           '
+
+      - name: No kernel-relevant changes
+        if: steps.changes.outputs.relevant != 'true'
+        run: |
+          echo "No Dockerfile/app/data/toolchain changes in this PR."
+          echo "kernel-build-verify has nothing to rebuild — reporting PASS."
