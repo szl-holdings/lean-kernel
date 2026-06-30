@@ -7,7 +7,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](LICENSE) [![Doctrine v11](https://img.shields.io/badge/Doctrine-v11_LOCKED-3b82f6?style=flat-square)](https://github.com/szl-holdings/.github/tree/main/doctrine) [![SLSA](https://img.shields.io/badge/SLSA-L1_honest-22c55e?style=flat-square)](https://slsa.dev/spec/v1.0/levels)
 
-[Docs](https://szl-holdings.github.io/docs-site) · [Quickstart](https://szl-holdings.github.io/docs-site/quickstart) · [Live demo](https://huggingface.co/spaces/SZLHOLDINGS/lean-kernel) · [SZL Holdings](https://a11oy.net)
+[Docs](https://szl-holdings.github.io/docs-site) · [Quickstart](https://szl-holdings.github.io/docs-site/quickstart) · [HF model card →](https://huggingface.co/SZLHOLDINGS/szl-kernels) · [SZL Holdings](https://a11oy.net)
 
 </div>
 
@@ -15,13 +15,18 @@
 
 Trust in governed AI shouldn't require trusting a vendor's word. This kernel lets you re-run the formal proofs behind SZL's invariant in your browser, so the math is independently checkable, not just asserted.
 
-## ▶️ Live demo
+## ▶️ HF Kernel Suite
 
-**[Open the live demo →](https://huggingface.co/spaces/SZLHOLDINGS/lean-kernel)**
+> **Note (alignment fix 2026-06-30):** The HF artifact for this repo is the model
+> [`SZLHOLDINGS/szl-kernels`](https://huggingface.co/SZLHOLDINGS/szl-kernels) (the unified
+> governed-kernel suite). An HF Space `SZLHOLDINGS/lean-kernel` was previously referenced
+> here but does not exist — the correct HF entry point is the model card.
 
-[![demo screenshot](https://raw.githubusercontent.com/szl-holdings/szl-brand/main/kit/logos/png/kanchay-512.png)](https://huggingface.co/spaces/SZLHOLDINGS/lean-kernel)
+**[Open the kernel suite →](https://huggingface.co/SZLHOLDINGS/szl-kernels)**
 
-<sub>_Screenshot: SZL Holdings kanchay mark — replace with a live capture of the running surface._</sub>
+[![szl-kernels model card](https://raw.githubusercontent.com/szl-holdings/szl-brand/main/kit/logos/png/kanchay-512.png)](https://huggingface.co/SZLHOLDINGS/szl-kernels)
+
+<sub>_SZL Holdings kanchay mark_</sub>
 
 ## ⚡ Quick start (30 seconds)
 
@@ -52,7 +57,7 @@ license: apache-2.0
 short_description: Live Lean v4.13.0 kernel for the Lutar Invariant
 ---
 
-# SZLHOLDINGS/lean-kernel
+# SZLHOLDINGS/szl-kernels (formerly lean-kernel)
 
 Live verification kernel for [szl-holdings/lutar-lean](https://github.com/szl-holdings/lutar-lean) — the Lean 4 formalization of the **Lutar Invariant Λ**.
 
@@ -89,4 +94,8 @@ Doctrine v11 LOCKED. Author: Stephen P. Lutar Jr. (ORCID 0009-0001-0110-4173), S
 
 Cite this work via [`CITATION.cff`](CITATION.cff). Math foundations: [szl-papers](https://github.com/szl-holdings/szl-papers) · [lutar-lean](https://github.com/szl-holdings/lutar-lean) (kernel `c7c0ba17`).
 
+HF artifact: [`SZLHOLDINGS/szl-kernels`](https://huggingface.co/SZLHOLDINGS/szl-kernels) (model, not Space).
+
 <sub>Λ Conjecture 1 (not a theorem) · 749/14/163 v11 LOCKED (kernel `c7c0ba17`) · SLSA L1 honest · Section 889 = 5 vendors · [SZL Holdings](https://a11oy.net) · Apache-2.0 code · CC-BY-4.0 papers</sub>
+
+*Signed-off-by: Stephen Lutar <stephenlutar2@gmail.com>*
