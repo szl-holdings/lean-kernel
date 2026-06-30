@@ -33,7 +33,7 @@ make quickstart   # or: see docs.szlholdings.com/quickstart
 
 ## 🔍 How it works
 
-In two sentences: this component is part of SZL's governed-AI mesh — it enforces policy and emits signed, replayable audit receipts so every AI action can be verified after the fact. The full mathematical foundation, formal proofs, and protocol details are documented below and in the [technical docs](https://szl-holdings.github.io/docs-site).
+In two sentences: this component is part of SZL's governed-AI mesh — it enforces policy and emits hash-chained, replayable Λ-receipts (tamper-evident integrity fingerprints, not cryptographic signatures) so every AI action can be re-verified after the fact. The full mathematical foundation, formal proofs, and protocol details are documented below and in the [technical docs](https://szl-holdings.github.io/docs-site).
 
 ---
 
