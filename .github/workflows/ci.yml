@@ -26,4 +26,14 @@ jobs:
         run: python -m compileall -q app
       - name: Import smoke test (no Lean build)
         working-directory: app
-        run: python -c "import server, lean_numbers, theorem_scan; print('import OK')"
+        run: python -c "import server, lean_numbers, theorem_scan, theorem_registry_guard; print('import OK')"
+      # Served-theorem registry guard (stdlib, offline): proves every theorem
+      # name app/server.py serves as a confirming theorem resolves to a real
+      # Lean declaration in the pinned lutar-lean corpus snapshot. An unbacked
+      # served name (absent from the corpus) fails here — never served as proven.
+      - name: Served-theorem registry guard — self-test
+        run: python app/theorem_registry_guard.py --self-test
+      - name: Served-theorem registry guard — repo check
+        run: python app/theorem_registry_guard.py
+      - name: Served-theorem registry guard — test (stdlib, no pytest dep)
+        run: python tests/test_theorem_registry_guard.py
