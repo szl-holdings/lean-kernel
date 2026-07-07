@@ -1,0 +1,23 @@
+# Copyright 2026 SZL Holdings — SPDX-License-Identifier: Apache-2.0
+name: CodeQL
+
+# Org reusable CodeQL SAST gate (SHA-pinned caller). Wave G CI parity.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '27 4 * * 1'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    uses: szl-holdings/.github/.github/workflows/reusable-codeql.yml@ebd2128c691b850c84438b671fbb512945933776
+    with:
+      languages: '["python"]'
+    secrets: inherit
