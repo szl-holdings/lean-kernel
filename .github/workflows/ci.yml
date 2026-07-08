@@ -37,3 +37,9 @@ jobs:
         run: python app/theorem_registry_guard.py
       - name: Served-theorem registry guard — test (stdlib, no pytest dep)
         run: python tests/test_theorem_registry_guard.py
+      # Λ-receipt fail-closed verify tests: adversarial soundness — a malformed /
+      # ill-typed / out-of-domain receipt must be REJECTED (HTTP 400 + honest
+      # reason), never crash (500) and never be silently coerced into a spurious
+      # Λ=0 "verified" answer. Well-formed receipts keep verifying unchanged.
+      - name: Λ-receipt verify — fail-closed adversarial test
+        run: python tests/test_verify_receipt.py

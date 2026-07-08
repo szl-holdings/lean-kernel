@@ -58,6 +58,110 @@ def compute_lambda(values: list[float]) -> float:
     return math.exp(log_sum / k)
 
 
+# --------------------------------------------------------------------------
+# Λ-receipt validation (fail-closed) — reject malformed / ill-typed receipts
+# --------------------------------------------------------------------------
+# A well-formed Λ-receipt has a non-empty vector of finite, non-negative real
+# axis values and (optionally) a finite real claimed Λ. These helpers REJECT
+# anything else at the boundary — an out-of-domain / ill-typed receipt is never
+# silently coerced into a spurious Λ=0 "verified" answer, and never crashes the
+# service with an unhandled coercion exception. compute_lambda still clamps
+# degenerate inputs to 0.0 for internal use, but the served /verify surface
+# refuses them honestly instead.
+def _as_real(value) -> float | None:
+    """Return ``value`` as a finite real float, or ``None`` if not a real number.
+
+    JSON booleans are ``int`` subclasses in Python but are ill-typed as an axis
+    or a Λ value, so they are rejected. Non-finite (±Inf / NaN) is rejected.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    fv = float(value)
+    if not math.isfinite(fv):
+        return None
+    return fv
+
+
+def coerce_axes(axes) -> tuple[list[float] | None, str | None]:
+    """Coerce a receipt's ``axes`` into finite, non-negative floats (fail-closed).
+
+    Returns ``(values, None)`` on success, or ``(None, reason)`` if the axis
+    vector is malformed: not a list/object, empty, or containing a value that
+    is not a finite non-negative real number.
+    """
+    if isinstance(axes, dict):
+        raw = list(axes.values())
+    elif isinstance(axes, list):
+        raw = axes
+    else:
+        return None, "'axes' must be a list or object"
+    if not raw:
+        return None, "'axes' must be a non-empty vector"
+    values: list[float] = []
+    for i, v in enumerate(raw):
+        fv = _as_real(v)
+        if fv is None:
+            return None, f"axis[{i}] must be a finite real number"
+        if fv < 0:
+            return None, f"axis[{i}] must be non-negative (Λ is defined on x ≥ 0)"
+        values.append(fv)
+    return values, None
+
+
+def evaluate_receipt(body) -> tuple[dict, int]:
+    """Verify a Λ-receipt ``{"axes":[…], "lambda":…}``; return ``(payload, status)``.
+
+    Fail-closed: a malformed / ill-typed / out-of-domain receipt is REJECTED
+    with HTTP 400 and an honest reason rather than crashing (500) or being
+    silently accepted. A well-formed receipt verifies exactly as before.
+    """
+    if not isinstance(body, dict):
+        return {"verified": False, "reason": "receipt body must be a JSON object"}, 400
+
+    axes = body.get("axes")
+    claimed = body.get("lambda", body.get("Lambda"))
+    if axes is None:
+        return {"verified": False, "reason": "missing 'axes'"}, 400
+
+    values, reason = coerce_axes(axes)
+    if values is None:
+        return {"verified": False, "reason": reason}, 400
+
+    recomputed = compute_lambda(values)
+    if claimed is None:
+        return {
+            "verified": None,
+            "recomputed_lambda": recomputed,
+            "reason": "no claimed lambda to check; returning canonical recompute",
+            "theorem": "Lutar.Invariant.Λ_def (closed form (∏xᵢ)^(1/k))",
+        }, 200
+
+    claimed_f = _as_real(claimed)
+    if claimed_f is None:
+        return {"verified": False,
+                "reason": "'lambda' must be a finite real number"}, 400
+
+    tol_abs, tol_rel = 1e-12, 1e-9
+    diff = abs(recomputed - claimed_f)
+    ok = diff <= tol_abs + tol_rel * max(abs(recomputed), abs(claimed_f))
+    # which theorem confirms it
+    if all(v == values[0] for v in values):
+        thm = "Lutar.a3_normalize_proof (Λ k (const c) = c)"
+    elif min(values) == 0:
+        thm = "Lutar.Invariant.Λ_def + zero-pinning (any axis 0 ⇒ Λ=0)"
+    else:
+        thm = "Lutar.Invariant.Λ_def (closed-form geomean) + Lutar.min_le_Λ/Λ_le_max bound"
+    return {
+        "verified": bool(ok),
+        "claimed_lambda": claimed_f,
+        "recomputed_lambda": recomputed,
+        "abs_diff": diff,
+        "tolerance": {"abs": tol_abs, "rel": tol_rel},
+        "theorem": thm,
+        "definition": "Λ_k(x) = (∏ xᵢ)^(1/k)  (unweighted geometric mean)",
+    }, 200
+
+
 def _run(cmd: list[str], cwd: Path, timeout: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
                           timeout=timeout)
@@ -133,47 +237,8 @@ async def verify(request: Request):
     except Exception:
         return JSONResponse({"verified": False, "reason": "invalid JSON"},
                             status_code=400)
-
-    axes = body.get("axes")
-    claimed = body.get("lambda", body.get("Lambda"))
-    if axes is None:
-        return JSONResponse({"verified": False, "reason": "missing 'axes'"},
-                            status_code=400)
-    if isinstance(axes, dict):
-        values = [float(v) for v in axes.values()]
-    elif isinstance(axes, list):
-        values = [float(v) for v in axes]
-    else:
-        return JSONResponse({"verified": False, "reason": "'axes' must be list or object"},
-                            status_code=400)
-
-    recomputed = compute_lambda(values)
-    if claimed is None:
-        return JSONResponse({
-            "verified": None,
-            "recomputed_lambda": recomputed,
-            "reason": "no claimed lambda to check; returning canonical recompute",
-            "theorem": "Lutar.Invariant.Λ_def (closed form (∏xᵢ)^(1/k))",
-        })
-    tol_abs, tol_rel = 1e-12, 1e-9
-    diff = abs(recomputed - float(claimed))
-    ok = diff <= tol_abs + tol_rel * max(abs(recomputed), abs(float(claimed)))
-    # which theorem confirms it
-    if all(v == values[0] for v in values):
-        thm = "Lutar.a3_normalize_proof (Λ k (const c) = c)"
-    elif min(values) == 0:
-        thm = "Lutar.Invariant.Λ_def + zero-pinning (any axis 0 ⇒ Λ=0)"
-    else:
-        thm = "Lutar.Invariant.Λ_def (closed-form geomean) + Lutar.min_le_Λ/Λ_le_max bound"
-    return JSONResponse({
-        "verified": bool(ok),
-        "claimed_lambda": float(claimed),
-        "recomputed_lambda": recomputed,
-        "abs_diff": diff,
-        "tolerance": {"abs": tol_abs, "rel": tol_rel},
-        "theorem": thm,
-        "definition": "Λ_k(x) = (∏ xᵢ)^(1/k)  (unweighted geometric mean)",
-    })
+    payload, status = evaluate_receipt(body)
+    return JSONResponse(payload, status_code=status)
 
 
 # --------------------------------------------------------------------------
