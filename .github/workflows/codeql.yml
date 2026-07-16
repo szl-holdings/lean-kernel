@@ -16,6 +16,8 @@ permissions:
 jobs:
   codeql:
     permissions:
+      actions: read
+      contents: read
       security-events: write
     uses: szl-holdings/.github/.github/workflows/reusable-codeql.yml@ebd2128c691b850c84438b671fbb512945933776
     with:
