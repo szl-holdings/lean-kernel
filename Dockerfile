@@ -1,11 +1,12 @@
 # SZLHOLDINGS/lean-kernel — live Lean/Lake verification kernel
-# Ubuntu 24.04 + elan + Lean v4.13.0 + Mathlib v4.13.0 + nginx + FastAPI
-FROM ubuntu:26.04
+# Ubuntu 26.04 (OCI-index digest pinned) + elan + Lean v4.13.0 + Mathlib v4.13.0 + nginx + FastAPI
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/.elan/bin:${PATH}"
 ENV ELAN_BIN="/root/.elan/bin"
 ENV LUTAR_REPO="/opt/lutar-lean"
+ENV LUTAR_COMMIT="034ef1cab37c77efec57775e97e99f196def37c8"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates nginx python3 python3-pip python3-venv \
@@ -20,9 +21,13 @@ RUN ELAN_SHA=3d5138e1526a569a23901b8ee559032793cf445e \
     && sh /tmp/elan-init.sh -y --default-toolchain none \
     && rm /tmp/elan-init.sh
 
-# --- clone lutar-lean at pinned main; install the v4.13.0 toolchain ---
-RUN git clone --depth 1 https://github.com/szl-holdings/lutar-lean.git ${LUTAR_REPO} \
-    && cd ${LUTAR_REPO} \
+# --- fetch lutar-lean at protected main 034ef1cab37c77efec57775e97e99f196def37c8; verify exact HEAD ---
+RUN git init "${LUTAR_REPO}" \
+    && git -C "${LUTAR_REPO}" remote add origin https://github.com/szl-holdings/lutar-lean.git \
+    && git -C "${LUTAR_REPO}" fetch --depth 1 --no-tags origin "${LUTAR_COMMIT}" \
+    && git -C "${LUTAR_REPO}" checkout --detach "${LUTAR_COMMIT}" \
+    && test "$(git -C "${LUTAR_REPO}" rev-parse HEAD)" = "${LUTAR_COMMIT}" \
+    && cd "${LUTAR_REPO}" \
     && cat lean-toolchain \
     && lake --version
 

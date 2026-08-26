@@ -10,7 +10,8 @@
 #            Mathlib module and proves a trivial theorem, against the warmed
 #            pinned cache)
 #
-# WHY:  the Dockerfile pins a base OS (now ubuntu:26.04). A base-OS bump can
+# WHY:  the Dockerfile pins a base OS tag and immutable OCI index digest
+#       (now ubuntu:26.04). A base-OS bump can
 #       silently break the prebuilt elan/Lean binaries (glibc), apt package
 #       availability, or the Mathlib cache load path. This gate rebuilds the
 #       image from whatever base the PR proposes and proves the toolchain still
@@ -55,6 +56,9 @@ jobs:
           # Full history so we can diff the PR base..head to decide whether any
           # kernel-relevant file changed.
           fetch-depth: 0
+
+      - name: Verify immutable base and source pin contract
+        run: python3 tests/test_dockerfile_source_pins.py
 
       # Decide whether the expensive image build + Lean verification is needed.
       # Non-PR events (push to main, manual dispatch) always run the full verify.
@@ -118,6 +122,13 @@ jobs:
             lean --version
             lake --version
             echo "pinned toolchain: $(cat lean-toolchain)"
+
+            echo "== pinned lutar-lean source =="
+            ACTUAL_LUTAR_COMMIT="$(git -C "$REPO" rev-parse HEAD)"
+            echo "expected protected-main commit: $LUTAR_COMMIT"
+            echo "actual in-image source HEAD: $ACTUAL_LUTAR_COMMIT"
+            test "$ACTUAL_LUTAR_COMMIT" = "$LUTAR_COMMIT"
+            echo "VERIFIED_SOURCE_HEAD: lutar-lean@$ACTUAL_LUTAR_COMMIT"
 
             echo "== core kernel smoke: build the Mathlib-free PutnamShowcase library =="
             # PutnamShowcase is core-Lean only (no Mathlib imports): a real,
